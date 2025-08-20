@@ -2,3 +2,20 @@ name: build-cosyvoice
 
 on:
   workflow_dispatch:  # 수동 트리거 (Actions 탭에서 직접 실행 가능)
+
+jobs:
+  build-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: docker build
+        run: |
+          cd runtime/python
+          docker build -t cosyvoice:v1.0 .
