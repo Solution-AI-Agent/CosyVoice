@@ -1,37 +1,61 @@
 name: build-cosyvoice
 
 on:
-  workflow_dispatch:  # 수동 트리거 (Actions 탭에서 직접 실행 가능)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "이미지 태그 (예: v1.0 또는 1.0)"
+        required: false
+        default: "latest"
 
 jobs:
   build-upload:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # 1) AWS 자격 증명 설정 (필수)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          python-version: '3.10'
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: docker build
-        run: |
-          cd runtime/python
-          docker build -t cosyvoice:1.0 .
-
+      # 2) ECR 로그인
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # 3) Docker 빌드 (CosyVoice 공식 가이드: runtime/python)
+      - name: Build image
+        run: |
+          cd runtime/python
+          docker build -t cosyvoice:${{ github.event.inputs.tag }} .
+
+      # 4) 태깅 (레지스트리/리포지토리는 시크릿에서)
       - name: Tag image for ECR
         env:
-          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }} # 또는 secrets.ECR_REGISTRY
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-        run: docker tag cosyvoice:v1.0 $ECR_REGISTRY/$ECR_REPOSITORY:1.0
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          docker tag cosyvoice:${TAG} ${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}
+          # 편의상 latest도 함께 푸시하고 싶다면:
+          if [ "${TAG}" != "latest" ]; then
+            docker tag cosyvoice:${TAG} ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
+          fi
 
+      # 5) 푸시
       - name: Push image to ECR
         env:
-          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }} # 또는 secrets.ECR_REGISTRY
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-        run: docker push $ECR_REGISTRY/$ECR_REPOSITORY:1.0
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}
+          if [ "${TAG}" != "latest" ]; then
+            docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
+          fi
