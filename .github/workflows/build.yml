@@ -1,1 +1,4 @@
+name: build-cosyvoice
 
+on:
+  workflow_dispatch:  # 수동 트리거 (Actions 탭에서 직접 실행 가능)
